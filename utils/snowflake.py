@@ -24,7 +24,7 @@ def connect_to_snowflake(
         logging.info("Connecting to Snowflake with Standard Credentials")
         try:
             conn = connect(
-                user=snowflake_user,
+                user="cxi@yext.com",
                 password=snowflake_pass,
                 account=snowflake_acct,
                 warehouse=warehouse,
@@ -35,7 +35,7 @@ def connect_to_snowflake(
             logging.info("Standard Credentials Failed, Trying Browser Auth")
             logging.info("Connecting to Snowflake with Browser Auth")
             conn = connect(
-                user=snowflake_user,
+                user="cxi@yext.com",
                 account=snowflake_acct,
                 warehouse=warehouse,
                 authenticator="externalbrowser",
