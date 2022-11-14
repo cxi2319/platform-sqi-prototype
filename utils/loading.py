@@ -68,11 +68,13 @@ def query_level_sqi(business, experience, lookback, conn):
         experience,
     )
     df = snowflake.get_data_from_snowflake(query, conn)
+    # Round column values to nearest tenth
     df["monthly_experience_avg_sqi"] = df["monthly_experience_avg_sqi"].round(2)
     df["query_sqi_score"] = df["query_sqi_score"].round(2)
     return df
 
 
+# Load a dataframe containing the global SQI for a given lookback period
 def global_sqi(lookback, conn):
     query = BUSINESS_QUERY.format(lookback)
     result = snowflake.get_data_from_snowflake(query, conn)
@@ -80,6 +82,7 @@ def global_sqi(lookback, conn):
     return result
 
 
+# Fetch a given business's Search API key
 def get_api_key(business_id, conn):
     query = """
             select api_key
@@ -90,12 +93,14 @@ def get_api_key(business_id, conn):
         business_id
     )
     key = snowflake.get_data_from_snowflake(query, conn)
+    # Check to see if the API key exists
     if len(key.index) == 0:
         raise ValueError("No API Key found for selected business.")
     api_key = key["api_key"][0]
     return api_key
 
 
+# Connect to the Yext client
 def yextclient(api_key):
     return YextClient(api_key)
 
