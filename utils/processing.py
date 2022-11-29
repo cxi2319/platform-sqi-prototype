@@ -1,3 +1,4 @@
+import numpy as np
 import streamlit as st
 
 # Return minimum number of searches for an experience given a percentile threshold
@@ -36,17 +37,33 @@ def cleaned_response(dict):
     return response_list
 
 
+def delete_session_state(key):
+    del st.session_state.key
+
+
 # Separate function for names, since description fields may be named differently depending on the experience
-def get_all_fields(dict):
+def get_all_fields(list):
     fields = []
+    dict = list[0]
     for key in dict:
         if key == "data":
-            result = dict.get(key)
-            for key in result:
-                fields.append(key)
-        else:
-            fields.append(key)
+            result = dict[key]
+            for x in result:
+                fields.append(x)
     return fields
+
+
+def get_link_fields(list):
+    fields = []
+    for key in list[0]:
+        fields.append(key)
+    return fields
+
+
+def unique_fields(list):
+    x = np.array(list)
+    unique_list = np.unique(x)
+    return unique_list
 
 
 def get_result_entity(dict):

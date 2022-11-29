@@ -1,11 +1,10 @@
 """Demo Streamlit app for in-platform SQI
 """
 import streamlit as st
-from st_aggrid import AgGrid
 from utils import loading, snowflake, processing
 
-st.set_page_config(page_title="In-Platform SQI Prototype", page_icon="gear")
-st.title("In-Platform SQI Prototype")
+st.set_page_config(page_title="Search Term SQI", page_icon="gear")
+st.title("In-Platform SQI")
 
 FILEPATH = "/Users/cxi/datascience/new-sqi-prototype/sqi_business_experience.csv"
 
@@ -18,33 +17,41 @@ st.markdown(
 # with st.form("user inputs"):
 with st.sidebar:
     # Number input for lookback period, maximum 30 days
+    st.write("Select a lookback period")
     lookback = st.sidebar.number_input(
-        "Lookback Period (Days)", min_value=0, max_value=30, value=14, step=1
+        "Lookback Period (Days)",
+        min_value=0,
+        max_value=30,
+        value=14,
+        step=1,
+        help="Maximum 30 days",
     )
-    st.sidebar.write("Table Inputs")
+    st.sidebar.write("Select a business and experience")
     # Load all options for business selection from a .csv file containing all businesses and experiences with an SQI score in October 2022
     businesses = loading.initialize_businesses(FILEPATH)
+    unique_businesses = businesses.business_name.unique()
     # Business user input
-    business_name = st.sidebar.selectbox("Business Name", options=businesses["BUSINESS_NAME"])
-    # Load all experiences for a particular business from a .csv file containing all businesses and experiences with an SQI score in October 2022, given the business name the user inputted above
-    experiences = loading.filter_experiences(businesses, business_name)
+    business_name = st.sidebar.selectbox("Business Name", options=unique_businesses)
     # Fetch the business ID, used to grab the API key for connecting with the Yext Client
     user_business_id = loading.filter_businessid(businesses, business_name)
+    # Load all experiences for a particular business from a .csv file containing all businesses and experiences with an SQI score in October 2022, given the business name the user inputted above
+    experiences = loading.filter_experiences(businesses, business_name)
+    unique_experiences = experiences.experience_key.unique()
     # User input for experience
-    experience_key = st.sidebar.selectbox("Experience Key", options=experiences["EXPERIENCE_KEY"])
+    experience_key = st.sidebar.selectbox("Experience Key", options=experiences["experience_key"])
     # Allow user to select the sort order of the table. Defaults to SQI ascending
     table_sort_order = st.selectbox(
         "Table Sort Order",
         options=["By SQI (Ascending)", "By Searches (Descending)"],
         help="Select a column to sort table by. Sort by either SQI (ascending) or searches (descending). Defaults to SQI ascending.",
     )
-    # Allow user to select the minimum searches threshold for the table, using percentiles. This is to filter out long-tail queries. Defaults to 0.75
-    st.sidebar.write("Select a Search Threshold")
+    # Allow user to select the minimum searches threshold for the table, using percentiles. This is to filter out long-tail queries. Defaults to 0.90
+    st.sidebar.write("Select a search threshold")
     searches_percentile = st.slider(
         "Min. Searches Threshold",
         min_value=0.0,
         max_value=1.0,
-        value=0.75,
+        value=0.90,
         step=0.05,
         help="Select a minimum search volume threshold, represented by percentile of total searches, for queries to view SQI for.",
     )
@@ -58,7 +65,7 @@ def connect_to_snowflake():
 
 CONN = connect_to_snowflake()
 # if submitted:
-tab1, tab2, tab3 = st.tabs(["Search Terms Table", "View Results", "Snowflake Query"])
+tab1, tab2 = st.tabs(["Search Terms Table", "Snowflake Query"])
 with tab1:
     # Load table containing all queries and SQI scores
     query_level_sqi = loading.query_level_sqi(business_name, experience_key, lookback, CONN)
@@ -67,6 +74,7 @@ with tab1:
     display_df = query_level_sqi.drop(
         columns=["business_name", "business_id", "experience_key", "monthly_experience_avg_sqi"]
     )
+    display_df = display_df.reset_index(drop=True)
     # Establish a minimum searches threshold, based on the user inputted percentile and the search volume of the experience
     min_searches = int(
         round(processing.searches_floor(display_df, "total_searches", searches_percentile), 0)
@@ -96,59 +104,13 @@ with tab1:
             value=global_sqi,
             help="This is the average SQI across every experience for the given lookback",
         )
-        st.write(
-            "Tip: click on the column headers to see additional sorting and filtering options!"
-        )
         # Display the table containing queries, searches, SQI, and performance (above, at, or below average)
-        AgGrid(display_df, height=700, theme="dark", fit_columns_on_grid_load=True)
+        st.dataframe(display_df, use_container_width=True)
     # If there is no data in the table, throw an IndexError to the user telling them to select a new date period
     except IndexError:
         st.write("No data found for this lookback period. Please select a different period.")
-with tab2:
-    st.header("View Search Results")
-    st.write("Select a search term to view its results set.")
-    api_key = loading.get_api_key(user_business_id, CONN)
-    client = loading.yextclient(api_key)
-    searchterm = st.selectbox("Select a query:", options=display_df["query"], key="query")
-    raw_response = processing.return_raw_response(client, searchterm, experience_key)
-    response = processing.cleaned_response(raw_response)
-    for item in response:
-        for key in item:
-            if key == "results":
-                for object in item.get(key):
-                    fields_list = processing.get_all_fields(object)
-    try:
-        display_fields = st.sidebar.multiselect(
-            "Display Fields", fields_list, default=["name"] if "name" in fields_list else []
-        )
-    except NameError:
-        st.write("No results were found for this query.")
-    for item in response:
-        for key in item:
-            if key == "verticalConfigId":
-                vertical = item.get(key).title()
-                st.subheader("Vertical: " + vertical)
-                if vertical == "Links":
-                    st.write(
-                        "Note: Links do not have a 'name' field. Select 'htmlTitle' to view the result name."
-                    )
-            elif key == "results":
-                for object in item.get(key):
-                    for key in object:
-                        if key == "data":
-                            result = object.get(key)
-                        else:
-                            link = object
-                    if vertical == "Links":
-                        st.info(processing.get_card_display(link, display_fields))
-                    else:
-                        st.info(processing.get_card_display(result, display_fields))
-    # Render full raw API response for the user to view
-    st.header("View Full API Response")
-    with st.expander("Click to view"):
-        st.write(raw_response["raw_response"])
 
-with tab3:
+with tab2:
     # Raw Snowflake query
     raw_query = loading.return_query(loading.QUERY, business_name, experience_key, lookback)
     st.header("Snowflake Query")

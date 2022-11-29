@@ -46,17 +46,18 @@ BUSINESS_QUERY = """
 # Load available businesses + experiences
 def initialize_businesses(filepath):
     business_df = pd.read_csv(filepath)
+    business_df = business_df.rename(str.lower, axis="columns")
     return business_df
 
 
 # Filter down to experiences that correspond to a given business once a user selects one
 def filter_experiences(df, business):
-    df_filtered = df[df["BUSINESS_NAME"] == business]
+    df_filtered = df[df["business_name"] == business]
     return df_filtered
 
 
 def filter_businessid(df, business):
-    business_id = df.loc[df["BUSINESS_NAME"] == business, "BUSINESS_ID"].values[0]
+    business_id = df.loc[df["business_name"] == business, "business_id"].values[0]
     return business_id
 
 
