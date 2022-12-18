@@ -51,8 +51,8 @@ with st.sidebar:
         "Min. Searches Threshold",
         min_value=0.0,
         max_value=1.0,
-        value=0.90,
-        step=0.05,
+        value=0.95,
+        step=0.01,
         help="Select a minimum search volume threshold, represented by percentile of total searches, for queries to view SQI for.",
     )
     # submitted = st.form_submit_button(label="Submit")

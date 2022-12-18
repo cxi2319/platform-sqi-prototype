@@ -1,4 +1,5 @@
 import streamlit as st
+from yext import YextClient
 from utils import loading, snowflake, processing
 
 st.set_page_config(page_title="View Search Results", page_icon="gear")
@@ -37,20 +38,14 @@ with st.sidebar:
     unique_experiences = experiences.experience_key.unique()
     # User input for experience
     experience_key = st.sidebar.selectbox("Experience Key", options=experiences["experience_key"])
-    # Allow user to select the sort order of the table. Defaults to SQI ascending
-    table_sort_order = st.selectbox(
-        "Table Sort Order",
-        options=["By SQI (Ascending)", "By Searches (Descending)"],
-        help="Select a column to sort table by. Sort by either SQI (ascending) or searches (descending). Defaults to SQI ascending.",
-    )
     # Allow user to select the minimum searches threshold for the table, using percentiles. This is to filter out long-tail queries. Defaults to 0.90
     st.sidebar.write("Select a search threshold")
     searches_percentile = st.slider(
         "Min. Searches Threshold",
         min_value=0.0,
         max_value=1.0,
-        value=0.90,
-        step=0.05,
+        value=0.95,
+        step=0.01,
         help="Select a minimum search volume threshold, represented by percentile of total searches, for queries to view SQI for.",
     )
     # submitted = st.form_submit_button(label="Submit")
@@ -78,28 +73,41 @@ min_searches = int(
 # filter out any queries that do not meet the minimum searches threshold
 display_df = display_df[display_df["total_searches"] >= min_searches]
 # Sort the table based on the sort order selected by the user
-display_df = processing.sort_df(display_df, table_sort_order)
+display_df = processing.sort_df(display_df, sort_index="By SQI (Ascending)")
 
 
 st.header("View Search Results")
-st.write("Select a query to preview its result set. You can also view the full API response.")
-api_key = loading.get_api_key(user_business_id, CONN)
+
+
+@st.experimental_memo()
+def get_api_key(business_id, _conn):
+    query = """
+            select api_key
+            from prod_product.public.search_api_keys
+            where business_id = {}
+            limit 1
+        """.format(
+        business_id
+    )
+    key = snowflake.get_data_from_snowflake(query, _conn)
+    # Check to see if the API key exists
+    if len(key.index) == 0:
+        raise ValueError("No API Key found for selected business.")
+    api_key = key["api_key"][0]
+    return api_key
+
+
+api_key = get_api_key(user_business_id, CONN)
+
+
+@st.experimental_memo()
+def yextclient(api_key):
+    return YextClient(api_key)
+
+
 client = loading.yextclient(api_key)
-if "query" not in st.session_state:
-    st.session_state.query = display_df["query"].iloc[0]
-existing = st.session_state.query
-values = display_df["query"].values.tolist()
-# st.write(display_df["query"])
-st.write("Current session state is:", st.session_state)
-query_select = st.selectbox(
-    "Select a query:",
-    options=display_df["query"],
-    key="query",
-    help="Sometimes the query will reset itself, so re-select the search",
-)
-st.write("Viewing result set for", st.session_state.query)
-st.write("Now the session state is:", st.session_state)
-raw_response = processing.return_raw_response(client, st.session_state, experience_key)
+query_select = st.selectbox("Select a query:", options=display_df["query"])
+raw_response = processing.return_raw_response(client, query_select, experience_key)
 response = processing.cleaned_response(raw_response)
 fields_list = []
 for item in response:
@@ -113,7 +121,7 @@ for item in response:
             else:
                 link_list = processing.get_link_fields(result_list)
 if fields_list == []:
-    st.subheader("No results found for this query.")
+    st.subheader("No Knowledge Graph results found for this query.")
 flat_list = [item for sublist in fields_list for item in sublist]
 unique_list = processing.unique_fields(flat_list)
 st.sidebar.write("Select entity fields to display on KG result profiles")
@@ -126,7 +134,7 @@ try:
 except NameError:
     st.sidebar.text_input(
         "Display Fields",
-        label="No KG results were found for this query.",
+        label="No Knowledge Graph results were found for this query.",
         disabled=True,
     )
 st.sidebar.write("Select fields to display on Links result profiles")
@@ -142,6 +150,12 @@ except NameError:
         value="No Links results were found for this query",
         disabled=True,
     )
+
+# Link to search log
+query_id = raw_response.get("query_id")
+search_log_url = f"[View Search Log](https://www.yext.com/s/{user_business_id}/search/experiences/{experience_key}/searchQueryLogDetails/{query_id})"
+st.markdown(search_log_url, unsafe_allow_html=True)
+# Display the result cards for the query
 for item in response:
     for key in item:
         if key == "verticalConfigId":

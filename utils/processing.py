@@ -37,10 +37,6 @@ def cleaned_response(dict):
     return response_list
 
 
-def delete_session_state(key):
-    del st.session_state.key
-
-
 # Separate function for names, since description fields may be named differently depending on the experience
 def get_all_fields(list):
     fields = []

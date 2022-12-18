@@ -1,4 +1,5 @@
 import pandas as pd
+import streamlit as st
 from yext import YextClient
 from utils import snowflake
 
@@ -62,13 +63,14 @@ def filter_businessid(df, business):
 
 
 # Return SQI search term dataframe
-def query_level_sqi(business, experience, lookback, conn):
+@st.experimental_memo()
+def query_level_sqi(business, experience, lookback, _conn):
     query = QUERY.format(
         lookback,
         business,
         experience,
     )
-    df = snowflake.get_data_from_snowflake(query, conn)
+    df = snowflake.get_data_from_snowflake(query, _conn)
     # Round column values to nearest tenth
     df["monthly_experience_avg_sqi"] = df["monthly_experience_avg_sqi"].round(2)
     df["query_sqi_score"] = df["query_sqi_score"].round(2)
