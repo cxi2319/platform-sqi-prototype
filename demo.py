@@ -14,7 +14,6 @@ st.markdown(
     """
 )
 # Initialize user inputs in a sidebar
-# with st.form("user inputs"):
 with st.sidebar:
     # Number input for lookback period, maximum 30 days
     st.write("Select a lookback period")
@@ -45,17 +44,16 @@ with st.sidebar:
         options=["By SQI (Ascending)", "By Searches (Descending)"],
         help="Select a column to sort table by. Sort by either SQI (ascending) or searches (descending). Defaults to SQI ascending.",
     )
-    # Allow user to select the minimum searches threshold for the table, using percentiles. This is to filter out long-tail queries. Defaults to 0.90
+    # Allow user to select the minimum searches threshold for the table, using percentiles. This is to filter out long-tail queries. Defaults to 0.99
     st.sidebar.write("Select a search threshold")
     searches_percentile = st.slider(
         "Min. Searches Threshold",
         min_value=0.0,
         max_value=1.0,
-        value=0.95,
+        value=0.99,
         step=0.01,
         help="Select a minimum search volume threshold, represented by percentile of total searches, for queries to view SQI for.",
     )
-    # submitted = st.form_submit_button(label="Submit")
 
 # Connect to Snowflake
 @st.experimental_singleton()
@@ -64,7 +62,7 @@ def connect_to_snowflake():
 
 
 CONN = connect_to_snowflake()
-# if submitted:
+# Initialize tabs - one containing the search terms table, the other with the source Snowflake query
 tab1, tab2 = st.tabs(["Search Terms Table", "Snowflake Query"])
 with tab1:
     # Load table containing all queries and SQI scores
@@ -72,7 +70,7 @@ with tab1:
     # Cleaning the dataframe of queries to display as a table
     # Drop unneccessary columns
     display_df = query_level_sqi.drop(
-        columns=["business_name", "business_id", "experience_key", "monthly_experience_avg_sqi"]
+        columns=["business_name", "business_id", "experience_key", "avg_experience_sqi"]
     )
     display_df = display_df.reset_index(drop=True)
     # Establish a minimum searches threshold, based on the user inputted percentile and the search volume of the experience
@@ -89,7 +87,7 @@ with tab1:
         col1, col2, col3 = st.columns(3)
         # Average SQI for this experience for the given date range
         # Take the first value from the column since they're all the same
-        experience_sqi = query_level_sqi["monthly_experience_avg_sqi"][0]
+        experience_sqi = query_level_sqi["avg_experience_sqi"][0]
         col1.metric(
             "Avg. Experience SQI",
             value=experience_sqi,

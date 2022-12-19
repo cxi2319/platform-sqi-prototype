@@ -13,7 +13,6 @@ st.markdown(
     """
 )
 # Initialize user inputs in a sidebar
-# with st.form("user inputs"):
 with st.sidebar:
     # Number input for lookback period, maximum 30 days
     st.write("Select a lookback period")
@@ -38,17 +37,16 @@ with st.sidebar:
     unique_experiences = experiences.experience_key.unique()
     # User input for experience
     experience_key = st.sidebar.selectbox("Experience Key", options=experiences["experience_key"])
-    # Allow user to select the minimum searches threshold for the table, using percentiles. This is to filter out long-tail queries. Defaults to 0.90
+    # Allow user to select the minimum searches threshold for the table, using percentiles. This is to filter out long-tail queries. Defaults to 0.99
     st.sidebar.write("Select a search threshold")
     searches_percentile = st.slider(
         "Min. Searches Threshold",
         min_value=0.0,
         max_value=1.0,
-        value=0.95,
+        value=0.99,
         step=0.01,
         help="Select a minimum search volume threshold, represented by percentile of total searches, for queries to view SQI for.",
     )
-    # submitted = st.form_submit_button(label="Submit")
 
 # Connect to Snowflake
 @st.experimental_singleton()
@@ -60,10 +58,10 @@ CONN = connect_to_snowflake()
 
 # Load table containing all queries and SQI scores
 query_level_sqi = loading.query_level_sqi(business_name, experience_key, lookback, CONN)
-# Cleaning the dataframe of queries to display as a table
+# Query the dataframe so that we have a list of searches
 # Drop unneccessary columns
 display_df = query_level_sqi.drop(
-    columns=["business_name", "business_id", "experience_key", "monthly_experience_avg_sqi"]
+    columns=["business_name", "business_id", "experience_key", "avg_experience_sqi"]
 )
 display_df = display_df.reset_index(drop=True)
 # Establish a minimum searches threshold, based on the user inputted percentile and the search volume of the experience
@@ -78,7 +76,7 @@ display_df = processing.sort_df(display_df, sort_index="By SQI (Ascending)")
 
 st.header("View Search Results")
 
-
+# Function to fetch the API key to connect to the YextClient
 @st.experimental_memo()
 def get_api_key(business_id, _conn):
     query = """
@@ -97,33 +95,50 @@ def get_api_key(business_id, _conn):
     return api_key
 
 
+# Fetch the API key to connect to the YextClient
 api_key = get_api_key(user_business_id, CONN)
 
-
+# Function to connect to the YextClient
 @st.experimental_memo()
 def yextclient(api_key):
     return YextClient(api_key)
 
 
-client = loading.yextclient(api_key)
+# Connect to the YextClient
+client = yextclient(api_key)
+# Selectbox for the user to select a query
 query_select = st.selectbox("Select a query:", options=display_df["query"])
+# Fetch the raw response object from the YextClient for the query
 raw_response = processing.return_raw_response(client, query_select, experience_key)
+# Clean the response, remove unecessary parameters
 response = processing.cleaned_response(raw_response)
+# Initialize empty list of field params, for the user to select as display fields
 fields_list = []
+# Iterate through each vertical in the response
 for item in response:
+    # Iterate through each param of the vertical response
     for key in item:
+        # Check to see if the param contains the vertical title
         if key == "verticalConfigId":
             vertical = item.get(key).title()
+        # Check to see if the param contains the vertical results object
         if key == "results":
+            # Get result entities
             result_list = item.get(key)
+            # If the vertical is a Knowledge Graph vertical, append all fields from the vertical's entities to the list of display fields
             if vertical != "Links":
                 fields_list.append(processing.get_all_fields(result_list))
+            # If it's a third-party links vertical create a list and append all the fields to that list
             else:
                 link_list = processing.get_link_fields(result_list)
+# Check to see if there were no display fields, in that case there were no KG results
 if fields_list == []:
     st.subheader("No Knowledge Graph results found for this query.")
+# flatten the list of all display fields for all verticals in a result set
 flat_list = [item for sublist in fields_list for item in sublist]
+# Only get the unique fields in the flattened list to display
 unique_list = processing.unique_fields(flat_list)
+# Initialize sidebar select option for display fields to display on KG entity profiles
 st.sidebar.write("Select entity fields to display on KG result profiles")
 try:
     display_fields = st.sidebar.multiselect(
@@ -137,6 +152,7 @@ except NameError:
         label="No Knowledge Graph results were found for this query.",
         disabled=True,
     )
+# Initialize sidebar select option for display fields to display on third-party links entity profiles
 st.sidebar.write("Select fields to display on Links result profiles")
 try:
     links_fields = st.sidebar.multiselect(
@@ -147,28 +163,65 @@ try:
 except NameError:
     st.sidebar.text_input(
         "Links Fields",
-        value="No Links results were found for this query",
+        value="No Third-Party Links results were found for this query",
         disabled=True,
     )
-
-# Link to search log
+# Provide link to search log
 query_id = raw_response.get("query_id")
 search_log_url = f"[View Search Log](https://www.yext.com/s/{user_business_id}/search/experiences/{experience_key}/searchQueryLogDetails/{query_id})"
 st.markdown(search_log_url, unsafe_allow_html=True)
+# Display hero numbers to display for the query
+try:
+    # Initialize columns for the hero numbers
+    col1, col2, col3 = st.columns(3)
+    # Average SQI for the query
+    query_sqi = display_df.loc[display_df["query"] == query_select, "query_sqi_score"]
+    col1.metric(
+        f"SQI score",
+        value=query_sqi,
+        help="This is the average SQI score for this query.",
+    )
+    # The total number of searches for the query
+    query_searches = display_df.loc[display_df["query"] == query_select, "total_searches"]
+    col2.metric(
+        "Count of searches",
+        value=query_searches,
+        help="This is the total number of searches for this query.",
+    )
+    # Performance label for the query
+    query_performance = display_df.loc[display_df["query"] == query_select, "performance"].values[0]
+    col3.metric(
+        "Query Performance",
+        value=query_performance,
+        help="Whether the query performed above, below, or at average relative to all queries in the experience.",
+    )
+# If there is no data in the table, throw an IndexError to the user telling them to select a new date period
+except IndexError:
+    st.write("No data found for this lookback period. Please select a different period.")
+
 # Display the result cards for the query
+# Iterate through each vertical in the response
 for item in response:
+    # Iterate through each param of the vertical response
     for key in item:
+        # Check to see if the param contains the vertical title
         if key == "verticalConfigId":
             vertical = item.get(key).title()
             st.subheader("Vertical: " + vertical)
+        # Check to see if the param contains the vertical results object
         if key == "results":
+            # Iterate through each entity in the vertical results
             for object in item.get(key):
+                # Iterate through each field in the entity profile
                 for field in object:
+                    # Check if the Vertical is a links vertical
                     if vertical == "Links":
                         link = object
                     else:
+                        # Get each field for non-links verticals
                         if field == "data":
                             result = object.get(field)
+                # Display Entity Profiles
                 if vertical == "Links":
                     st.info(processing.get_card_display(link, links_fields))
                 else:

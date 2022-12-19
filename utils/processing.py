@@ -1,5 +1,4 @@
 import numpy as np
-import streamlit as st
 
 # Return minimum number of searches for an experience given a percentile threshold
 def searches_floor(df, col, quantile):
@@ -37,38 +36,38 @@ def cleaned_response(dict):
     return response_list
 
 
-# Separate function for names, since description fields may be named differently depending on the experience
+# Function to get entity profile fileds for KG results. Returns a list
 def get_all_fields(list):
+    # Initialize empty list of fields
     fields = []
+    # Get the dictionary containing entity profiles
     dict = list[0]
+    # Iterate through entity profile fields
     for key in dict:
+        # Check to see if the field contains the entity data
         if key == "data":
             result = dict[key]
+            # Append each entity profile field to the list of fields
             for x in result:
                 fields.append(x)
     return fields
 
 
+# Function to get entity profile fields for third-party Links results. Returns a list
 def get_link_fields(list):
+    # Initialize empty list of fields
     fields = []
+    # Iterate through each field in the Links profile
     for key in list[0]:
         fields.append(key)
     return fields
 
 
+# Function to extract all of the unique profile fields from a list of entity profile fields for a given result
 def unique_fields(list):
     x = np.array(list)
     unique_list = np.unique(x)
     return unique_list
-
-
-def get_result_entity(dict):
-    for key in dict:
-        if key == "data":
-            result = dict.get(key)
-        else:
-            result = dict
-    return result
 
 
 def get_card_display(profile: dict, fields: list[str], char_lim: int = 500):
